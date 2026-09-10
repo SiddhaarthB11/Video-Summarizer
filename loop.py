@@ -46,7 +46,7 @@ def run_video(
     embedder = embedder or Embedder()
     library = library or ReferenceLibrary.from_json(embedder=embedder)
     if video is None:
-        emit("upload", status="start", message="Uploading clip to Gemini…")
+        emit("upload", status="start", message="Sending the clip to Gemini…")
         video = backend.upload_video(video_path)
         emit("upload", status="done")
 

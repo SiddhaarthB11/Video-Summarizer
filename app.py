@@ -66,21 +66,28 @@ def _worker(job_id: str, path: str) -> None:
     def emit(ev: dict) -> None:
         q.put(ev)
 
+    video = None
     try:
         emit({"event": "prepare", "message": "Downscaling the clip for upload…"})
         small = _downscale(path)
+        emit({"event": "upload", "status": "start", "message": "Sending the clip to Gemini…"})
+        video = BACKEND.upload_video(small)
+        emit({"event": "upload", "status": "done"})
         run_video(
             small,
             halting=True,
             backend=BACKEND,
             library=LIBRARY,
             embedder=EMBEDDER,
+            video=video,
             on_event=emit,
         )
     except Exception as exc:  # noqa: BLE001
-        emit({"event": "error", "message": f"{type(exc).__name__}: {exc}",
+        emit({"event": "error", "message": str(exc),
               "trace": traceback.format_exc()})
     finally:
+        if video is not None:
+            BACKEND.delete_file(video)
         emit({"event": "_end"})
         for p in {path, path + ".720.mp4"}:
             try:
@@ -488,9 +495,22 @@ function handle(d){
     case "critique": onCritique(d); break;
     case "decide": onDecide(d); break;
     case "done": onDone(d); break;
-    case "error": setStatus("✕ "+d.message,"err");
-      if(d.trace) $("#feed").append(el("pre",{class:"mono",
-        style:"font-size:11px;color:var(--stop);white-space:pre-wrap;margin-top:12px"}, d.trace)); break;
+    case "error": {
+      setStatus("Something went wrong — see below","err");
+      const box = el("div",{class:"round",style:"border-color:var(--stop)"});
+      box.append(el("div",{class:"steps"},
+        el("div",{class:"step"},
+          el("div",{class:"slab",style:"color:var(--stop)"}, "Error"),
+          el("div",{style:"font-size:13.5px;color:var(--ink)"}, d.message))));
+      if(d.trace){
+        const det = el("details",{style:"padding:0 18px 14px"});
+        det.append(el("summary",{style:"cursor:pointer;font-size:12px;color:var(--ink-faint)"}, "technical details"));
+        det.append(el("pre",{style:"font-size:11px;color:var(--ink-soft);white-space:pre-wrap;overflow-x:auto"}, d.trace));
+        box.append(det);
+      }
+      $("#feed").append(box);
+      break;
+    }
   }
 }
 

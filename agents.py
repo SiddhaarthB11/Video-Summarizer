@@ -150,17 +150,53 @@ class GeminiBackend:
             )
         self.client = genai.Client(api_key=key)
 
-    def upload_video(self, path: str):
-        f = self.client.files.upload(file=path)
-        deadline = time.time() + 300
-        while _state(f) == "PROCESSING":
-            if time.time() > deadline:
-                raise TimeoutError(f"video still processing after 5 min: {path}")
-            time.sleep(3)
-            f = self.client.files.get(name=f.name)
-        if _state(f) == "FAILED":
-            raise RuntimeError(f"Gemini failed to process video: {path}")
-        return f
+    # Clips up to this size are sent inline as request bytes; larger ones go
+    # through the File API. Inline avoids the File API entirely, which both
+    # removes an upload round-trip and sidesteps its occasional processing
+    # failures. Gemini's inline request cap is 20 MB total; leave headroom.
+    INLINE_MAX_BYTES = 18 * 1024 * 1024
+
+    def upload_video(self, path: str, attempts: int = 3):
+        from google.genai import types
+
+        size = os.path.getsize(path)
+        if size <= self.INLINE_MAX_BYTES:
+            mime = "video/mp4"
+            if path.lower().endswith((".webm", ".mov", ".mkv")):
+                mime = "video/" + path.rsplit(".", 1)[-1].lower().replace("mkv", "x-matroska")
+            with open(path, "rb") as fh:
+                return types.Part.from_bytes(data=fh.read(), mime_type=mime)
+
+        # large file -> File API, with retries (its processing sometimes FAILs)
+        last = ""
+        for i in range(attempts):
+            f = self.client.files.upload(file=path)
+            deadline = time.time() + 300
+            while _state(f) == "PROCESSING":
+                if time.time() > deadline:
+                    raise TimeoutError(f"video still processing after 5 min: {path}")
+                time.sleep(3)
+                f = self.client.files.get(name=f.name)
+            if _state(f) == "ACTIVE":
+                return f
+            last = f"{_state(f)} {getattr(f, 'error', '') or ''}".strip()
+            self.delete_file(f)
+            if i < attempts - 1:
+                time.sleep(2 * (i + 1))
+        raise RuntimeError(
+            f"Gemini's video service could not process the clip after {attempts} tries "
+            f"({last}). This is usually a temporary problem on Gemini's side — wait a "
+            f"minute and run it again. If it keeps failing, try a standard H.264 .mp4."
+        )
+
+    def delete_file(self, f) -> None:
+        name = getattr(f, "name", None)
+        if not name:  # inline Part -> nothing to clean up
+            return
+        try:
+            self.client.files.delete(name=name)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _generate(self, contents, system: str, usage: Usage, agent: str,
                   json_out: bool = False) -> str:
@@ -234,8 +270,11 @@ class MockBackend:
     _DRAFTS = [_THIN, _FULL, _FULL, _FULL, _FULL]
     _SCORES = [0.55, 0.85, 0.90, 0.905, 0.905]
 
-    def upload_video(self, path: str):
+    def upload_video(self, path: str, attempts: int = 3):
         return {"mock_video": os.path.basename(path) if path else "mock"}
+
+    def delete_file(self, f) -> None:
+        pass
 
     def fresh_eyes(self, video, usage: Usage) -> str:
         usage.add("fresh_eyes", 120, 15)
