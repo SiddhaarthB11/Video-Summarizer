@@ -1,0 +1,7 @@
+google-genai>=0.3.0
+sentence-transformers>=2.2.2
+numpy>=1.24
+python-dotenv>=1.0.0
+truststore>=0.9      # use the OS cert store (corporate-proxy TLS)
+flask>=3.0           # only for app.py, the interactive runner
+pytest>=7.4

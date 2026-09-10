@@ -1,0 +1,20 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.claude/settings.local.json
+
+# generated run logs
+results/*.json
+
+# generated dashboard (rebuild with `python build_dashboard.py`)
+dashboard.html
+dashboard.artifact.html
+
+# media — user-supplied clips and their derived previews
+videos/*
+!videos/.gitkeep
+assets/*
+!assets/.gitkeep
