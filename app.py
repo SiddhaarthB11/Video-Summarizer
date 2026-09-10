@@ -4,8 +4,9 @@
 
 Runs the semantic-halting policy (Writer / Critic / RAG / cascade) on one
 uploaded video and streams every step to the browser over Server-Sent Events.
-Needs GEMINI_API_KEY (see .env). ffmpeg, if present, is used to downscale the
-upload before it goes to Gemini.
+Each completed run is written to results/<clip>__halted.json (same shape as
+run.py) with a small preview copy in assets/, so it shows up at /dashboard.
+Needs GEMINI_API_KEY (see .env). ffmpeg, if present, downscales the upload.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import tempfile
@@ -34,6 +36,7 @@ app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024  # 512 MB uploads
 JOBS: dict[str, queue.Queue] = {}
 _UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "halt_video_uploads")
 os.makedirs(_UPLOAD_DIR, exist_ok=True)
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
 print("Loading embedding model and reference library (first run downloads ~90 MB)…")
 EMBEDDER = Embedder()
@@ -43,15 +46,16 @@ BACKEND = get_backend()
 print(f"Ready. {len(LIBRARY)} reference summaries, backend={getattr(BACKEND,'name','?')}.")
 
 
-def _downscale(src: str) -> str:
-    """Return a 720p copy of `src` if ffmpeg is available, else `src`."""
+def _scale_to(src: str, dst: str, height: int, keep_audio: bool, crf: int = 28) -> str:
+    """Re-encode `src` to at most `height` px tall. Returns `dst` on success,
+    else `src` (missing ffmpeg or an encode error)."""
     if not shutil.which("ffmpeg"):
         return src
-    dst = src + ".720.mp4"
+    audio = ["-c:a", "aac", "-b:a", "96k"] if keep_audio else ["-an"]
     cmd = [
         "ffmpeg", "-v", "error", "-y", "-i", src,
-        "-vf", "scale=-2:'min(720,ih)'", "-c:v", "libx264", "-preset", "veryfast",
-        "-crf", "28", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", dst,
+        "-vf", f"scale=-2:'min({height},ih)'", "-c:v", "libx264", "-preset", "veryfast",
+        "-crf", str(crf), *audio, "-movflags", "+faststart", dst,
     ]
     try:
         subprocess.run(cmd, check=True, timeout=180)
@@ -60,20 +64,57 @@ def _downscale(src: str) -> str:
         return src
 
 
-def _worker(job_id: str, path: str) -> None:
+def _downscale(src: str) -> str:
+    """720p copy (with audio) for the upload to Gemini, or `src` unchanged."""
+    return _scale_to(src, src + ".720.mp4", 720, keep_audio=True)
+
+
+def _safe_stem(name: str) -> str:
+    stem = os.path.splitext(os.path.basename(name))[0]
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("_") or "clip"
+
+
+def _save_run(result: dict, original_name: str, small_path: str) -> str:
+    """Write the run to results/ (same shape as run.py) and stash a preview
+    copy in assets/ so it shows up in the dashboard. Returns the json filename."""
+    stem = _safe_stem(original_name)
+    result = dict(result)
+    result["video"] = original_name
+    result["video_path"] = f"uploaded via app · {original_name}"
+
+    os.makedirs(config.RESULTS_DIR, exist_ok=True)
+    out = os.path.join(config.RESULTS_DIR, f"{stem}__halted.json")
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(result, fh, indent=2)
+
+    try:
+        os.makedirs(ASSETS_DIR, exist_ok=True)
+        asset = os.path.join(ASSETS_DIR, f"{stem}.mp4")
+        made = _scale_to(small_path, asset + ".tmp.mp4", 480, keep_audio=False, crf=30)
+        if made != small_path and os.path.exists(made):
+            os.replace(made, asset)
+        elif os.path.exists(small_path):  # no ffmpeg -> just copy
+            shutil.copyfile(small_path, asset)
+    except OSError:
+        pass
+    return os.path.basename(out)
+
+
+def _worker(job_id: str, path: str, original_name: str) -> None:
     q = JOBS[job_id]
 
     def emit(ev: dict) -> None:
         q.put(ev)
 
     video = None
+    small = path
     try:
         emit({"event": "prepare", "message": "Downscaling the clip for upload…"})
         small = _downscale(path)
         emit({"event": "upload", "status": "start", "message": "Sending the clip to Gemini…"})
         video = BACKEND.upload_video(small)
         emit({"event": "upload", "status": "done"})
-        run_video(
+        result = run_video(
             small,
             halting=True,
             backend=BACKEND,
@@ -82,6 +123,8 @@ def _worker(job_id: str, path: str) -> None:
             video=video,
             on_event=emit,
         )
+        saved = _save_run(result, original_name, small)
+        emit({"event": "saved", "file": saved})
     except Exception as exc:  # noqa: BLE001
         emit({"event": "error", "message": str(exc),
               "trace": traceback.format_exc()})
@@ -89,7 +132,7 @@ def _worker(job_id: str, path: str) -> None:
         if video is not None:
             BACKEND.delete_file(video)
         emit({"event": "_end"})
-        for p in {path, path + ".720.mp4"}:
+        for p in {path, small, path + ".720.mp4"}:
             try:
                 os.remove(p)
             except OSError:
@@ -106,7 +149,7 @@ def run():
     path = os.path.join(_UPLOAD_DIR, job_id + ext)
     f.save(path)
     JOBS[job_id] = queue.Queue()
-    threading.Thread(target=_worker, args=(job_id, path), daemon=True).start()
+    threading.Thread(target=_worker, args=(job_id, path, f.filename), daemon=True).start()
     return {"job_id": job_id, "filename": f.filename}
 
 
@@ -495,6 +538,11 @@ function handle(d){
     case "critique": onCritique(d); break;
     case "decide": onDecide(d); break;
     case "done": onDone(d); break;
+    case "saved":
+      { const f=document.querySelector(".final");
+        if(f) f.append(el("div",{style:"margin-top:12px;font-size:11.5px;color:var(--ink-faint)"},
+          "Saved to results/"+d.file+" — also in the dashboard at /dashboard")); }
+      break;
     case "error": {
       setStatus("Something went wrong — see below","err");
       const box = el("div",{class:"round",style:"border-color:var(--stop)"});

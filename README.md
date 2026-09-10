@@ -74,8 +74,9 @@ the page as it happens: the first-glance description, each attempt's lookup and
 the example summaries it found, the summary it wrote, how much it changed, the
 reviewer's notes and rating, and the decision to keep going or stop. First start
 takes ~1 min (loads the embedding model). ffmpeg, if installed, downscales the
-upload before it goes to Gemini. `/dashboard` on the same server shows the
-walkthrough of past `results/`.
+upload before it goes to Gemini. Each run is saved to `results/<clip>__halted.json`
+(with a preview in `assets/`), so it appears at `/dashboard` — the walkthrough of
+past runs on the same server.
 
 ### Batch — all clips, halted vs. baseline
 

@@ -15,6 +15,7 @@ import datetime as dt
 import glob
 import json
 import os
+import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = os.path.join(HERE, "results")
@@ -24,7 +25,8 @@ OUT_ARTIFACT = os.path.join(HERE, "dashboard.artifact.html")
 
 
 def _clip_id(name: str) -> str:
-    return os.path.splitext(os.path.basename(name))[0]
+    stem = os.path.splitext(os.path.basename(name))[0]
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("_") or "clip"
 
 
 def load() -> dict:
@@ -176,6 +178,7 @@ section > h2{
   background:var(--surface); color:var(--ink-soft);
 }
 .toggle button[aria-pressed="true"]{background:var(--accent); color:#fff}
+.toggle button:disabled{opacity:.4; cursor:not-allowed}
 .toggle button:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
 
 /* clip header */
@@ -396,10 +399,23 @@ function ratingChart(scores, stopIdx){
 
 function render(){
   const clip = DATA.clips.find(c=>c.id===curClip);
-  const run = clip.policies[curPolicy];
-  const other = clip.policies[curPolicy==="halted"?"baseline":"halted"];
   const view = $("#clipview");
   view.innerHTML = "";
+  // a clip may only have one of the two runs (e.g. app runs are halted-only)
+  let run = clip.policies[curPolicy];
+  const other = clip.policies[curPolicy==="halted"?"baseline":"halted"];
+  const btnB = $("#btn-baseline");
+  btnB.disabled = !clip.policies["baseline"];
+  $("#btn-halted").disabled = !clip.policies["halted"];
+  if(!run){
+    const only = clip.policies["halted"] ? "halted" : "baseline";
+    view.append(el("div",{class:"verdict"},
+      curPolicy==="baseline"
+        ? "This clip was run from the app, which only does the “stop when settled” version."
+        : "This clip only has the always-rewrite run."));
+    run = clip.policies[only];
+    if(!run) return;
+  }
 
   // header
   const head = el("div",{class:"cliphead"});
