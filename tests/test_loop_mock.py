@@ -60,3 +60,26 @@ def test_quality_delta_is_small():
     h = run_video("<mock>", halting=True)
     b = run_video("<mock>", halting=False)
     assert abs(h["final_score"] - b["final_score"]) <= 0.05
+
+
+def test_dynamic_references_are_generated_and_logged():
+    assert config.DYNAMIC_REFERENCES  # default on
+    res = run_video("<mock>", halting=True)
+    gen = res["generated_references"]
+    assert len(gen) == config.DYNAMIC_REFERENCE_COUNT
+    assert all(e["source"] == "generated" for e in gen)
+    assert res["usage"]["by_agent"].get("generate_refs", 0) > 0
+
+
+def test_reusing_generated_references_skips_regeneration():
+    first = run_video("<mock>", halting=True)
+    reused = run_video("<mock>", halting=True,
+                       generated_references=first["generated_references"])
+    assert reused["generated_references"] == first["generated_references"]
+    assert "generate_refs" not in reused["usage"]["by_agent"]
+
+
+def test_dynamic_references_off_yields_no_generated_docs():
+    res = run_video("<mock>", halting=True, generated_references=[])
+    assert res["generated_references"] == []
+    assert all(r["source"] == "static" for rd in res["rounds"] for r in rd["retrieved"])

@@ -44,6 +44,25 @@ The "narrowing" of retrieval across rounds is not special logic: as the draft
 becomes more specific, the retrieval query (the draft itself) becomes more
 specific, so retrieved examples get more targeted.
 
+**Dynamic references (`DYNAMIC_REFERENCES = True`).** The 25 hand-written
+examples in `reference_summaries.json` only cover 4 categories, so a clip
+outside them (or just a different animal/sport/setting) retrieves the same
+one or two loosely-related entries every round — retrieval stops being useful.
+To handle arbitrary clips, one extra call right after the fresh-eyes
+description writes ~5 reference summaries tailored to that clip's general
+subject (varying what each emphasizes: action, setting, outcome, a secondary
+detail). These are **added to** the fixed 25 for that run only — retrieval
+picks whichever of the ~30 is actually closest — and every retrieved example
+is tagged `static` or `generated` everywhere it's shown (dashboard, live
+runner, `results/*.json`). Set `HALT_VIDEO_DYNAMIC_REFS=0` to turn this off and
+reproduce the original fixed-library-only behavior. Worth being honest about:
+generated references are written by the same model that then writes and
+grades the summary, so they're weaker, self-referential grounding compared to
+the hand-vetted 25 — closer to "does this match the model's own idea of a
+good summary" than an independent standard. `run.py` generates once per clip
+and reuses the same set for both the halted and baseline runs, so the
+comparison between them stays apples-to-apples.
+
 ## Setup
 
 ```bash
@@ -122,6 +141,8 @@ street_scene.mp4               5/5       0.0%         failsafe    0.83/0.84     
 | `DELTA`      | 0.02 | minimum Critic-score gain that still counts as "improving" |
 | `TOP_K`      | 3 | reference summaries retrieved per round |
 | `CRITIC_WATCHES_VIDEO` | False | also give the Critic the clip, not just the draft text |
+| `DYNAMIC_REFERENCES` | True | write ~5 reference examples tailored to each clip, added to the fixed library |
+| `DYNAMIC_REFERENCE_COUNT` | 5 | how many tailored examples to write per clip |
 
 ## Files
 
@@ -130,7 +151,7 @@ street_scene.mp4               5/5       0.0%         failsafe    0.83/0.84     
 | `config.py` | all tunable constants, model names, paths |
 | `retrieval.py` | local embedder + reference library + `top_k_similar` + `cosine_distance` |
 | `reference_summaries.json` | 25 hand-written reference summaries (4 categories) — **review/edit these** |
-| `agents.py` | Writer, Critic, fresh-eyes description; real Gemini + deterministic mock backend |
+| `agents.py` | Writer, Critic, fresh-eyes description, dynamic reference generation; real Gemini + deterministic mock backend |
 | `halting.py` | the four-level halt cascade (pure function) |
 | `loop.py` | `run_video(path, halting)` — one clip, one policy |
 | `app.py` | interactive Flask runner — upload a clip, watch the loop live; also serves `/dashboard` |
@@ -173,6 +194,9 @@ fixed-iteration baseline, then report:
 * Two-agent Writer/Critic loop (not a single self-revising agent)
 * RAG grounding via a hand-built reference-summary library with cosine-similarity
   retrieval, re-queried each round
+* Per-clip dynamic reference generation (on by default) so retrieval stays useful
+  on subjects the fixed 25-entry library doesn't cover — see "Dynamic references"
+  above for how it works and its self-referential-grounding caveat
 * The free embedding-distance convergence signal (HaltIQ's Eq. 1)
 * A second, Critic-driven quality signal, combined with the distance signal in a
   4-level halt cascade

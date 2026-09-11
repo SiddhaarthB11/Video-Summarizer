@@ -363,6 +363,7 @@ button.ghost{background:transparent;border:1px solid var(--line-strong);color:va
 .doc .dtext{font-size:12px;color:var(--ink-soft);line-height:1.5}
 .tag{font-size:9px;font-weight:700;letter-spacing:.06em;color:#fff;background:var(--accent);
   padding:2px 5px;border-radius:4px}
+.tag.gen{background:var(--warn)}
 
 .gauge svg{width:100%;max-width:380px;height:auto;display:block;overflow:visible}
 .note{font-size:12.5px;color:var(--ink-soft);margin-top:5px}
@@ -531,6 +532,16 @@ function handle(d){
         el("span",{class:"lab"},"fresh-eyes description · the round 1 retrieval query"),
         "“"+d.text+"”")); }
       break;
+    case "generate_refs":
+      if(d.status==="start"){ setStatus("Round 0 · "+d.message,""); break; }
+      if(!d.examples || !d.examples.length) break;
+      { const box=el("div",{class:"fresh"});
+        box.append(el("span",{class:"lab"},
+          `${d.examples.length} reference examples generated for this clip · added to the library, tagged "generated" wherever shown`));
+        d.examples.forEach(e=> box.append(el("div",{style:"font-size:12.5px;margin-top:6px"},
+          el("b",{},e.category+": "), e.text)));
+        $("#feed").append(box); }
+      break;
     case "round": ensureRound(d.round); setStatus(`Round ${d.round} of ${d.max_rounds} …`,""); break;
     case "retrieve": onRetrieve(d); break;
     case "write": onWrite(d); break;
@@ -599,6 +610,7 @@ function onRetrieve(d){
     const h=el("div",{class:"dh"});
     h.append(el("span",{class:"did"},doc.id));
     h.append(el("span",{class:"dcat"},doc.category));
+    if(doc.source==="generated") h.append(el("span",{class:"tag gen"},"WRITTEN FOR THIS CLIP"));
     if(i===0) h.append(el("span",{class:"tag"},"NEAREST"));
     const sim=el("span",{class:"dsim"});
     sim.append(el("span",{class:"simbar"}, el("i",{style:`width:${Math.max(3,Math.round(doc.similarity*100))}%`})));

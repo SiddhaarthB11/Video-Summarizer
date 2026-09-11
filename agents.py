@@ -81,6 +81,15 @@ _CRITIC_SYSTEM = (
     "draft against the video. Return strict JSON."
 )
 
+_REFGEN_SYSTEM = (
+    "You curate a library of reference-quality video-summary examples: 2-3 "
+    "sentences of concrete plain prose (subject, key actions in order, setting, "
+    "outcome), no markdown, no hedging language. You write examples of OTHER "
+    "videos in the same general subject area -- never a description of the "
+    "specific clip you were told about, and never mention that you're writing "
+    "an example."
+)
+
 
 def _format_examples(retrieved) -> str:
     lines = []
@@ -112,6 +121,24 @@ def build_writer_prompt(retrieved, prev_draft: str | None,
     else:
         parts.append("Write your summary of the clip.")
     return "\n".join(parts)
+
+
+def build_refgen_prompt(description: str, n: int) -> str:
+    return "\n".join(
+        [
+            f'A video was glanced at and described in one line as: "{description}"',
+            "",
+            f"Write {n} reference-quality example summaries for OTHER videos in that "
+            "same general subject area -- vary what each one emphasizes (the action, "
+            "the setting/environment, the outcome, a secondary detail) so they cover "
+            "the subject from different angles. Do not describe the exact scene above; "
+            "invent plausible, varied scenes of the same general kind.",
+            "",
+            'Return JSON exactly: {"examples": [{"category": "<2-3 word label>", '
+            '"text": "<2-3 sentence example summary>"}, ...]} '
+            f"with exactly {n} items.",
+        ]
+    )
 
 
 def build_critic_prompt(draft: str, retrieved) -> str:
@@ -240,6 +267,12 @@ class GeminiBackend:
         contents = [video, prompt] if (video is not None and config.CRITIC_WATCHES_VIDEO) else [prompt]
         return self._generate(contents, _CRITIC_SYSTEM, usage, "critic", json_out=True)
 
+    def generate_references(self, description: str, usage: Usage, n: int) -> str:
+        return self._generate(
+            [build_refgen_prompt(description, n)], _REFGEN_SYSTEM, usage,
+            "generate_refs", json_out=True,
+        )
+
 
 def _state(f) -> str:
     s = getattr(f, "state", "")
@@ -301,6 +334,14 @@ class MockBackend:
             }
         )
 
+    def generate_references(self, description: str, usage: Usage, n: int) -> str:
+        usage.add("generate_refs", 150, 120)
+        examples = [
+            {"category": "mock-generated", "text": f"A mock generated example #{i+1} in the "
+             f"style of: {description}"} for i in range(n)
+        ]
+        return json.dumps({"examples": examples})
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -311,20 +352,26 @@ def get_backend():
     return MockBackend() if config.MOCK else GeminiBackend()
 
 
-def parse_critic_json(raw: str) -> CriticResult:
-    """Parse the Critic's JSON, tolerating code fences and stray prose."""
+def _loose_json_object(raw: str) -> dict | None:
+    """Best-effort JSON-object parse, tolerating code fences and stray prose."""
     text = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
-    data = None
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
         m = re.search(r"\{.*\}", text, flags=re.DOTALL)
-        if m:
-            try:
-                data = json.loads(m.group(0))
-            except json.JSONDecodeError:
-                data = None
-    if not isinstance(data, dict):
+        if not m:
+            return None
+        try:
+            data = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            return None
+    return data if isinstance(data, dict) else None
+
+
+def parse_critic_json(raw: str) -> CriticResult:
+    """Parse the Critic's JSON, tolerating code fences and stray prose."""
+    data = _loose_json_object(raw)
+    if data is None:
         return CriticResult(critique=raw[:500], score=0.0, approved=False, raw=raw)
     try:
         score = float(data.get("score", 0.0))
@@ -337,3 +384,25 @@ def parse_critic_json(raw: str) -> CriticResult:
         approved=bool(data.get("approved", False)),
         raw=raw,
     )
+
+
+def parse_generated_references(raw: str) -> list[dict[str, str]]:
+    """Parse the {"examples": [{category, text}, ...]} the refgen call returns.
+    Malformed or missing items are skipped rather than failing the whole run --
+    generated references are a bonus, not required for the loop to work."""
+    data = _loose_json_object(raw) or {}
+    items = data.get("examples", [])
+    out = []
+    for i, it in enumerate(items if isinstance(items, list) else []):
+        if not isinstance(it, dict):
+            continue
+        text = str(it.get("text", "")).strip()
+        if not text:
+            continue
+        out.append({
+            "id": f"gen-{i + 1}",
+            "category": str(it.get("category", "generated")).strip() or "generated",
+            "text": text,
+            "source": "generated",
+        })
+    return out

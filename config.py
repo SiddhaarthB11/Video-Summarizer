@@ -36,6 +36,19 @@ DELTA = 0.02        # minimum Critic-score gain that still counts as "improving"
 
 TOP_K = 3           # reference summaries retrieved per round
 
+# If True, one extra call per video writes a small set of reference summaries
+# tailored to that clip's subject (from the fresh-eyes description) and adds
+# them to the fixed library for that run only. This is what makes retrieval
+# useful on subjects the hand-written 25 don't cover -- a clip that's nothing
+# like "dog on grass" still gets close, relevant style examples. They're ADDED
+# to the static library, never replace it, and every retrieved example is
+# tagged static/generated wherever it's shown, since these examples are
+# written by the same model that's doing the writing and reviewing -- a
+# weaker, self-referential form of grounding than the hand-vetted library.
+# Turn off to reproduce the original fixed-library-only behavior.
+DYNAMIC_REFERENCES = os.environ.get("HALT_VIDEO_DYNAMIC_REFS", "1") == "1"
+DYNAMIC_REFERENCE_COUNT = int(os.environ.get("HALT_VIDEO_DYNAMIC_REF_COUNT", "5"))
+
 # --- Behaviour toggles ---------------------------------------------------
 
 # If True, the Critic call is also given the video (not just the draft text).

@@ -86,12 +86,14 @@ class RetrievedExample:
     category: str
     text: str
     similarity: float
+    source: str = "static"  # "static" (hand-written library) | "generated" (this clip only)
 
     def as_dict(self, include_text: bool = True) -> dict[str, Any]:
         d = {
             "id": self.id,
             "category": self.category,
             "similarity": round(self.similarity, 4),
+            "source": self.source,
         }
         if include_text:
             d["text"] = self.text
@@ -118,10 +120,26 @@ class ReferenceLibrary:
             missing = {"id", "category", "text"} - set(e)
             if missing:
                 raise ValueError(f"reference entry {e!r} missing keys: {missing}")
+            e.setdefault("source", "static")
         return cls(entries, embedder or Embedder())
 
     def __len__(self) -> int:
         return len(self.entries)
+
+    def extended(self, extra_entries: list[dict[str, Any]]) -> "ReferenceLibrary":
+        """Return a NEW library = this one + extra_entries (e.g. clip-specific
+        generated examples). Does not mutate self, and does not re-embed the
+        existing entries -- only the new ones are encoded."""
+        if not extra_entries:
+            return self
+        for e in extra_entries:
+            e.setdefault("source", "generated")
+        extra_matrix = np.vstack([self.embedder.encode(e["text"]) for e in extra_entries])
+        lib = ReferenceLibrary.__new__(ReferenceLibrary)
+        lib.entries = self.entries + extra_entries
+        lib.embedder = self.embedder
+        lib._matrix = np.vstack([self._matrix, extra_matrix])
+        return lib
 
     def top_k_similar(self, query_text: str, k: int = config.TOP_K) -> list[RetrievedExample]:
         """Return the k most cosine-similar reference summaries, best first."""
@@ -136,6 +154,7 @@ class ReferenceLibrary:
                 category=self.entries[i]["category"],
                 text=self.entries[i]["text"],
                 similarity=float(sims[i]),
+                source=self.entries[i].get("source", "static"),
             )
             for i in order
         ]

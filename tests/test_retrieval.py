@@ -83,3 +83,22 @@ def test_query_specificity_changes_ranking(library):
         "A barista steams milk and pours latte art for a customer.", k=3
     )
     assert specific[0].similarity > vague[0].similarity
+
+
+def test_static_entries_are_tagged(library):
+    assert all(e.get("source") == "static" for e in library.entries)
+
+
+def test_extended_adds_entries_without_mutating_original(library):
+    original_len = len(library)
+    extra = [{"id": "gen-1", "category": "test", "text": "A rocket launches into a clear blue sky."}]
+    bigger = library.extended(extra)
+    assert len(bigger) == original_len + 1
+    assert len(library) == original_len  # original untouched
+    hits = bigger.top_k_similar("A rocket launches into a clear blue sky.", k=1)
+    assert hits[0].id == "gen-1"
+    assert hits[0].source == "generated"
+
+
+def test_extended_with_no_entries_returns_self(library):
+    assert library.extended([]) is library

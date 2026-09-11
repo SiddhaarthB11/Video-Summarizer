@@ -84,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         per_clip = {}
+        generated_refs = None  # generate once per clip, reuse for both policies
         for halting in policies:
             tag = "halted" if halting else "baseline"
             try:
@@ -95,10 +96,12 @@ def main(argv: list[str] | None = None) -> int:
                     embedder=embedder,
                     video=video,
                     verbose=args.verbose,
+                    generated_references=generated_refs,
                 )
             except Exception:  # noqa: BLE001
                 print(f"!! {name} [{tag}] failed:\n{traceback.format_exc()}")
                 continue
+            generated_refs = res.get("generated_references")
             per_clip[tag] = res
             out_path = os.path.join(args.results_dir, f"{name}__{tag}.json")
             with open(out_path, "w", encoding="utf-8") as fh:

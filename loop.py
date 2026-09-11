@@ -22,6 +22,7 @@ from agents import (
     build_writer_prompt,
     get_backend,
     parse_critic_json,
+    parse_generated_references,
 )
 from halting import halt_decision
 from retrieval import Embedder, ReferenceLibrary, cosine_distance
@@ -37,7 +38,15 @@ def run_video(
     video=None,
     verbose: bool = False,
     on_event: Callable[[dict], None] | None = None,
+    generated_references: list[dict] | None = None,
 ) -> dict[str, Any]:
+    """
+    generated_references: reuse a previously-generated clip-specific reference
+    set instead of writing a new one (e.g. so the halted and baseline runs of
+    the same clip compare against identical references). Pass `[]` to force
+    "no dynamic references" for this call regardless of config. Leave as
+    `None` to generate fresh ones when `config.DYNAMIC_REFERENCES` is on.
+    """
     def emit(kind: str, **data: Any) -> None:
         if on_event is not None:
             on_event({"event": kind, **data})
@@ -64,6 +73,22 @@ def run_video(
     query_source = "fresh-eyes description of the clip"
     emit("fresh_eyes", status="done", text=fresh_eyes_query)
 
+    if generated_references is None and config.DYNAMIC_REFERENCES:
+        emit("generate_refs", status="start",
+             message="Writing tailored examples for this clip…")
+        try:
+            raw = backend.generate_references(
+                fresh_eyes_query, usage, config.DYNAMIC_REFERENCE_COUNT
+            )
+            generated_references = parse_generated_references(raw)
+        except Exception:  # noqa: BLE001 - a bad generation shouldn't sink the run
+            generated_references = []
+        emit("generate_refs", status="done",
+             examples=[{"category": e["category"], "text": e["text"]}
+                       for e in generated_references])
+    generated_references = generated_references or []
+    run_library = library.extended(generated_references)
+
     rounds: list[dict[str, Any]] = []
     distances: list[float] = []   # d_t for t >= 2
     scores: list[float] = []      # q_t for every completed round
@@ -78,7 +103,7 @@ def run_video(
         emit("retrieve", status="start", round=t,
              query=query, query_source=query_source,
              message=f"Retrieving top-{config.TOP_K} reference summaries…")
-        retrieved = library.top_k_similar(query, k=config.TOP_K)
+        retrieved = run_library.top_k_similar(query, k=config.TOP_K)
         emit("retrieve", status="done", round=t,
              query=query, query_source=query_source,
              retrieved=[r.as_dict() for r in retrieved])
@@ -167,6 +192,7 @@ def run_video(
         "policy": policy,
         "backend": getattr(backend, "name", "unknown"),
         "fresh_eyes_query": fresh_eyes_query,
+        "generated_references": generated_references,
         "rounds_used": len(rounds),
         "max_rounds": config.MAX_ROUNDS,
         "stop_reason": stop_reason,
@@ -183,6 +209,8 @@ def run_video(
             "TOP_K": config.TOP_K,
             "MODEL": config.MODEL,
             "EMBED_MODEL": config.EMBED_MODEL,
+            "DYNAMIC_REFERENCES": config.DYNAMIC_REFERENCES,
+            "DYNAMIC_REFERENCE_COUNT": config.DYNAMIC_REFERENCE_COUNT,
         },
         "rounds": rounds,
     }
