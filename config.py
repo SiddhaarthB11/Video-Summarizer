@@ -52,7 +52,10 @@ DYNAMIC_REFERENCES = os.environ.get("HALT_VIDEO_DYNAMIC_REFS", "1") == "1"
 # surfaces TOP_K of them per round. A higher count just means more candidates
 # in the running, which matters because in practice only a couple of the
 # generated entries end up close enough to actually win a retrieval slot.
-DYNAMIC_REFERENCE_COUNT = int(os.environ.get("HALT_VIDEO_DYNAMIC_REF_COUNT", "8"))
+# Checked empirically at 30: pairwise embedding similarity across all 30 stays
+# low (only 1 near-duplicate pair out of 435), so quality/diversity holds up
+# at this count for gemini-2.5-flash -- it's not just repeating itself.
+DYNAMIC_REFERENCE_COUNT = int(os.environ.get("HALT_VIDEO_DYNAMIC_REF_COUNT", "30"))
 
 # --- Behaviour toggles ---------------------------------------------------
 
