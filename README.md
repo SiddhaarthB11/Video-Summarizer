@@ -87,8 +87,7 @@ Drop 3–5 short (~30s) clips into `videos/` (`.mp4`, `.mov`, `.webm`, ...).
 python app.py
 ```
 
-Open http://localhost:5000. Drop in a video (or click one of the **bundled
-clips** — whatever is in `videos/`), hit **Run the loop**. Every step streams to
+Open http://localhost:5000. Drop in a video, hit **Run the loop**. Every step streams to
 the page as it happens: the first-glance description, each attempt's lookup and
 the example summaries it found, the summary it wrote, how much it changed, the
 reviewer's notes and rating, and the decision to keep going or stop. First start

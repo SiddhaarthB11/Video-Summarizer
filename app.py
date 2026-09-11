@@ -23,7 +23,7 @@ import traceback
 import uuid
 
 import config  # loads .env
-from flask import Flask, Response, request, send_file, send_from_directory
+from flask import Flask, Response, request, send_file
 
 # heavy imports (torch etc.) happen here, once, at startup
 from agents import get_backend
@@ -173,22 +173,6 @@ def events(job_id: str):
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@app.get("/samples")
-def samples():
-    out = []
-    if os.path.isdir(config.VIDEOS_DIR):
-        for fn in sorted(os.listdir(config.VIDEOS_DIR)):
-            p = os.path.join(config.VIDEOS_DIR, fn)
-            if fn.lower().endswith(config.VIDEO_EXTENSIONS) and os.path.isfile(p):
-                out.append({"name": fn, "mb": round(os.path.getsize(p) / 1048576, 1)})
-    return {"clips": out}
-
-
-@app.get("/samples/<path:name>")
-def sample_file(name: str):
-    return send_from_directory(config.VIDEOS_DIR, name)
-
-
 @app.get("/dashboard")
 def dashboard():
     p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
@@ -278,17 +262,6 @@ header.top{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom
   border-radius:8px;padding:6px 12px}
 .filechip .sz{color:var(--ink-faint)}
 #file{display:none}
-
-.samples{display:flex;flex-direction:column;gap:8px}
-.samples .slab{font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:600;
-  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
-.samples .chips{display:flex;flex-wrap:wrap;gap:7px}
-.samples button{font:inherit;font-size:12px;cursor:pointer;color:var(--ink-soft);
-  background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:6px 12px;
-  font-family:"IBM Plex Mono",monospace}
-.samples button:hover{border-color:var(--accent);color:var(--ink)}
-.samples button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);
-  background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
 
 .controls{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 button.run{font:inherit;font-weight:600;font-size:14px;cursor:pointer;border:0;border-radius:10px;
@@ -411,11 +384,6 @@ button.ghost{background:transparent;border:1px solid var(--line-strong);color:va
       <input type="file" id="file" accept="video/*">
     </label>
 
-    <div class="samples" id="samples" hidden>
-      <span class="slab">bundled clips</span>
-      <div class="chips" id="samplechips"></div>
-    </div>
-
     <div class="controls">
       <button class="run" id="go" disabled>Run the loop</button>
       <button class="run ghost" id="again" hidden>Run another clip</button>
@@ -459,31 +427,11 @@ dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("over");}
 dz.addEventListener("dragleave",()=>dz.classList.remove("over"));
 dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("over");
   if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);});
-fileInput.addEventListener("change",()=>{ if(fileInput.files[0]){ clearSampleSel(); setFile(fileInput.files[0]); } });
+fileInput.addEventListener("change",()=>{ if(fileInput.files[0]) setFile(fileInput.files[0]); });
 function setFile(f){ chosen=f; dz.classList.add("has-file");
   $("#dzlabel").textContent=f.name;
   $("#dzhint").textContent=(f.size/1048576).toFixed(1)+" MB · click to choose another";
   $("#go").disabled=false; }
-
-function clearSampleSel(){ document.querySelectorAll("#samplechips button")
-  .forEach(b=>b.setAttribute("aria-pressed","false")); }
-
-fetch("/samples").then(r=>r.json()).then(d=>{
-  if(!d.clips || !d.clips.length) return;
-  const box=$("#samplechips");
-  d.clips.forEach(c=>{
-    const b=el("button",{type:"button","aria-pressed":"false"}, `${c.name}  ·  ${c.mb} MB`);
-    b.onclick=async()=>{
-      setStatus("Fetching "+c.name+" …","");
-      const blob=await (await fetch("/samples/"+encodeURIComponent(c.name))).blob();
-      clearSampleSel(); b.setAttribute("aria-pressed","true");
-      setFile(new File([blob], c.name, {type:blob.type||"video/mp4"}));
-      setStatus("Ready — "+c.name,"idle");
-    };
-    box.append(b);
-  });
-  $("#samples").hidden=false;
-}).catch(()=>{});
 
 $("#go").addEventListener("click",start);
 $("#again").addEventListener("click",reset);
