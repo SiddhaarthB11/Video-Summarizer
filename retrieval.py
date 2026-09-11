@@ -12,7 +12,7 @@ Two jobs live here:
    brute-force cosine similarity. With ~24 entries a real vector DB would be
    overkill.
 
-`cosine_distance` implements HaltIQ Eq. 1:  d_t = 1 - cos(e_t, e_{t-1}).
+`cosine_distance` measures round-to-round drift:  d_t = 1 - cos(e_t, e_{t-1}).
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def cosine_distance(a: np.ndarray, b: np.ndarray) -> float:
-    """HaltIQ Eq. 1: 1 - cos(a, b), clamped to the valid range [0, 2]."""
+    """1 - cos(a, b), clamped to the valid range [0, 2]."""
     d = 1.0 - cosine_similarity(a, b)
     return float(min(2.0, max(0.0, d)))
 

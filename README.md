@@ -1,8 +1,7 @@
 # Semantic Halting for Iterative Video Summarization
 
-An applied extension of **HaltIQ** / *"Semantic Early-Stopping for Iterative LLM
-Agent Loops"* (Shrivastava, 2026) to a new task and modality: iterative video
-summarization.
+An iterative video-summarization pipeline that decides for itself when to stop
+revising, instead of always running a fixed number of rounds.
 
 A **Writer** agent watches a short clip and drafts a summary. A **Critic** agent
 compares that draft against a small RAG-retrieved set of reference-quality
@@ -27,7 +26,7 @@ fresh-eyes description of the clip  ─┐
    │  retrieve top-k reference summaries (query = prev draft │
    │      on round > 1, else the fresh-eyes description)     │
    │  WRITER(clip, prev draft, critic feedback, retrieved) → x_t
-   │  e_t = embed(x_t);  d_t = 1 - cos(e_t, e_{t-1})   [HaltIQ Eq. 1]
+   │  e_t = embed(x_t);  d_t = 1 - cos(e_t, e_{t-1})   [round-to-round drift]
    │  CRITIC(x_t, retrieved) → {critique, score q_t, approved}
    │  HALT CASCADE:
    │    1. approved?                              → HALT (critic)
@@ -196,18 +195,18 @@ fixed-iteration baseline, then report:
 * Per-clip dynamic reference generation (on by default) so retrieval stays useful
   on subjects the fixed 25-entry library doesn't cover — see "Dynamic references"
   above for how it works and its self-referential-grounding caveat
-* The free embedding-distance convergence signal (HaltIQ's Eq. 1)
+* A free, local embedding-distance convergence signal
 * A second, Critic-driven quality signal, combined with the distance signal in a
   4-level halt cascade
 * A genuine fixed-iteration baseline for comparison
 
 **Out of scope (these do not exist in this project):**
 
-* HaltIQ's formal, machine-checked termination proofs (§V of their paper) — this
-  project only observes empirical behavior, makes no formal guarantees
-* HaltIQ's paired statistical significance / non-inferiority testing across a
-  large test split — this project uses 3–5 videos and manual quality checks, not
-  a statistically powered study
+* Formal, machine-checked termination proofs — this project only observes
+  empirical behavior, makes no formal guarantees
+* Paired statistical significance / non-inferiority testing across a large test
+  split — this project uses 3–5 videos and manual quality checks, not a
+  statistically powered study
 * A judge-efficient token-accounting harness that separates operational vs.
   evaluation tokens and caches judge calls — this project logs simple call
   counts, not a full cost-accounting system

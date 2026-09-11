@@ -22,7 +22,7 @@ except Exception:  # noqa: BLE001 - dotenv is optional
 MODEL = os.environ.get("HALT_VIDEO_MODEL", "gemini-2.5-flash")
 
 # Local sentence-embedding model (sentence-transformers). Runs on CPU, no API
-# cost. 384-dimensional output, matching HaltIQ's embedding map.
+# cost. 384-dimensional output.
 EMBED_MODEL = os.environ.get("HALT_VIDEO_EMBED_MODEL", "all-MiniLM-L6-v2")
 
 # --- Halting cascade constants --------------------------------------------

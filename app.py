@@ -365,7 +365,7 @@ button.ghost{background:transparent;border:1px solid var(--line-strong);color:va
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="eyebrow">HaltIQ · live</div>
+    <div class="eyebrow">Video summarizer · live</div>
     <h1>Watch the halting loop run</h1>
     <p class="sub">Upload a short clip. The Writer drafts a summary, RAG pulls reference
     summaries, the draft is embedded and measured against the last one, the Critic scores

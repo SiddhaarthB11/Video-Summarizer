@@ -1,8 +1,7 @@
 """The four-level halt cascade.
 
 This is a pure function of the round state -- no I/O, no model calls -- so it
-can be unit-tested exhaustively. It mirrors HaltIQ's halt operator H, minus the
-`entropy` reason (out of scope for this project).
+can be unit-tested exhaustively.
 
 Priority order (first match wins):
 
