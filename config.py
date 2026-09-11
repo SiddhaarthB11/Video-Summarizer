@@ -47,7 +47,12 @@ TOP_K = 3           # reference summaries retrieved per round
 # weaker, self-referential form of grounding than the hand-vetted library.
 # Turn off to reproduce the original fixed-library-only behavior.
 DYNAMIC_REFERENCES = os.environ.get("HALT_VIDEO_DYNAMIC_REFS", "1") == "1"
-DYNAMIC_REFERENCE_COUNT = int(os.environ.get("HALT_VIDEO_DYNAMIC_REF_COUNT", "5"))
+# Generating more costs almost nothing extra (one call either way -- a longer
+# JSON response, not another round-trip) since retrieval still only ever
+# surfaces TOP_K of them per round. A higher count just means more candidates
+# in the running, which matters because in practice only a couple of the
+# generated entries end up close enough to actually win a retrieval slot.
+DYNAMIC_REFERENCE_COUNT = int(os.environ.get("HALT_VIDEO_DYNAMIC_REF_COUNT", "8"))
 
 # --- Behaviour toggles ---------------------------------------------------
 
