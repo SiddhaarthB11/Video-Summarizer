@@ -388,8 +388,7 @@ def parse_critic_json(raw: str) -> CriticResult:
 
 def parse_generated_references(raw: str) -> list[dict[str, str]]:
     """Parse the {"examples": [{category, text}, ...]} the refgen call returns.
-    Malformed or missing items are skipped rather than failing the whole run --
-    generated references are a bonus, not required for the loop to work."""
+    Malformed or missing items are skipped rather than failing the whole run."""
     data = _loose_json_object(raw) or {}
     items = data.get("examples", [])
     out = []
@@ -400,9 +399,8 @@ def parse_generated_references(raw: str) -> list[dict[str, str]]:
         if not text:
             continue
         out.append({
-            "id": f"gen-{i + 1}",
-            "category": str(it.get("category", "generated")).strip() or "generated",
+            "id": f"ref-{i + 1}",
+            "category": str(it.get("category", "example")).strip() or "example",
             "text": text,
-            "source": "generated",
         })
     return out

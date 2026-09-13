@@ -36,17 +36,14 @@ DELTA = 0.02        # minimum Critic-score gain that still counts as "improving"
 
 TOP_K = 3           # reference summaries retrieved per round
 
-# If True, one extra call per video writes a small set of reference summaries
-# tailored to that clip's subject (from the fresh-eyes description) and adds
-# them to the fixed library for that run only. This is what makes retrieval
-# useful on subjects the hand-written 25 don't cover -- a clip that's nothing
-# like "dog on grass" still gets close, relevant style examples. They're ADDED
-# to the static library, never replace it, and every retrieved example is
-# tagged static/generated wherever it's shown, since these examples are
-# written by the same model that's doing the writing and reviewing -- a
-# weaker, self-referential form of grounding than the hand-vetted library.
-# Turn off to reproduce the original fixed-library-only behavior.
-DYNAMIC_REFERENCES = os.environ.get("HALT_VIDEO_DYNAMIC_REFS", "1") == "1"
+# One call at the start of every run writes this many reference-quality example
+# summaries tailored to that clip's subject (from the fresh-eyes description).
+# There's no fixed library behind it -- these are the only reference examples
+# retrieval has to work with, regenerated fresh each run. Since the same model
+# writes these, then writes the draft, then grades it, this is a weaker,
+# self-referential form of grounding than an independently authored library
+# would be -- see README for that tradeoff.
+#
 # Generating more costs almost nothing extra (one call either way -- a longer
 # JSON response, not another round-trip) since retrieval still only ever
 # surfaces TOP_K of them per round. A higher count just means more candidates
@@ -70,7 +67,6 @@ MOCK = os.environ.get("HALT_VIDEO_MOCK", "0") == "1"
 # --- Paths ---------------------------------------------------------------
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-REFERENCE_LIBRARY_PATH = os.path.join(_HERE, "reference_summaries.json")
 VIDEOS_DIR = os.path.join(_HERE, "videos")
 RESULTS_DIR = os.path.join(_HERE, "results")
 

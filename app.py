@@ -28,7 +28,7 @@ from flask import Flask, Response, request, send_file
 # heavy imports (torch etc.) happen here, once, at startup
 from agents import get_backend
 from loop import run_video
-from retrieval import Embedder, ReferenceLibrary
+from retrieval import Embedder
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024  # 512 MB uploads
@@ -38,12 +38,11 @@ _UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "halt_video_uploads")
 os.makedirs(_UPLOAD_DIR, exist_ok=True)
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
-print("Loading embedding model and reference library (first run downloads ~90 MB)…")
+print("Loading embedding model (first run downloads ~90 MB)…")
 EMBEDDER = Embedder()
 EMBEDDER.encode("warmup")
-LIBRARY = ReferenceLibrary.from_json(embedder=EMBEDDER)
 BACKEND = get_backend()
-print(f"Ready. {len(LIBRARY)} reference summaries, backend={getattr(BACKEND,'name','?')}.")
+print(f"Ready. backend={getattr(BACKEND,'name','?')}.")
 
 
 def _scale_to(src: str, dst: str, height: int, keep_audio: bool, crf: int = 28) -> str:
@@ -118,7 +117,6 @@ def _worker(job_id: str, path: str, original_name: str) -> None:
             small,
             halting=True,
             backend=BACKEND,
-            library=LIBRARY,
             embedder=EMBEDDER,
             video=video,
             on_event=emit,
@@ -336,7 +334,6 @@ button.ghost{background:transparent;border:1px solid var(--line-strong);color:va
 .doc .dtext{font-size:12px;color:var(--ink-soft);line-height:1.5}
 .tag{font-size:9px;font-weight:700;letter-spacing:.06em;color:#fff;background:var(--accent);
   padding:2px 5px;border-radius:4px}
-.tag.gen{background:var(--warn)}
 
 .gauge svg{width:100%;max-width:380px;height:auto;display:block;overflow:visible}
 .note{font-size:12.5px;color:var(--ink-soft);margin-top:5px}
@@ -485,7 +482,7 @@ function handle(d){
       if(!d.examples || !d.examples.length) break;
       { const box=el("div",{class:"fresh"});
         box.append(el("span",{class:"lab"},
-          `${d.examples.length} reference examples generated for this clip · added to the library, tagged "generated" wherever shown`));
+          `${d.examples.length} reference examples written fresh for this clip's subject`));
         d.examples.forEach(e=> box.append(el("div",{style:"font-size:12.5px;margin-top:6px"},
           el("b",{},e.category+": "), e.text)));
         $("#feed").append(box); }
@@ -558,7 +555,6 @@ function onRetrieve(d){
     const h=el("div",{class:"dh"});
     h.append(el("span",{class:"did"},doc.id));
     h.append(el("span",{class:"dcat"},doc.category));
-    if(doc.source==="generated") h.append(el("span",{class:"tag gen"},"WRITTEN FOR THIS CLIP"));
     if(i===0) h.append(el("span",{class:"tag"},"NEAREST"));
     const sim=el("span",{class:"dsim"});
     sim.append(el("span",{class:"simbar"}, el("i",{style:`width:${Math.max(3,Math.round(doc.similarity*100))}%`})));

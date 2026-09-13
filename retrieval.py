@@ -7,17 +7,16 @@ Two jobs live here:
    query *and* for the round-to-round convergence signal, so both use an
    identical embedding space.
 
-2. `ReferenceLibrary` loads the hand-written reference summaries, pre-embeds
-   them once at startup, and answers `top_k_similar(query_text, k)` by
-   brute-force cosine similarity. With ~24 entries a real vector DB would be
-   overkill.
+2. `ReferenceLibrary` holds one run's reference summaries (written fresh per
+   clip -- see agents.generate_references), pre-embeds them once, and answers
+   `top_k_similar(query_text, k)` by brute-force cosine similarity. At a few
+   dozen entries a real vector DB would be overkill.
 
 `cosine_distance` measures round-to-round drift:  d_t = 1 - cos(e_t, e_{t-1}).
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -86,14 +85,12 @@ class RetrievedExample:
     category: str
     text: str
     similarity: float
-    source: str = "static"  # "static" (hand-written library) | "generated" (this clip only)
 
     def as_dict(self, include_text: bool = True) -> dict[str, Any]:
         d = {
             "id": self.id,
             "category": self.category,
             "similarity": round(self.similarity, 4),
-            "source": self.source,
         }
         if include_text:
             d["text"] = self.text
@@ -106,40 +103,16 @@ class ReferenceLibrary:
     def __init__(self, entries: list[dict[str, Any]], embedder: Embedder) -> None:
         if not entries:
             raise ValueError("reference library is empty")
-        self.entries = entries
-        self.embedder = embedder
-        self._matrix = np.vstack([embedder.encode(e["text"]) for e in entries])
-
-    @classmethod
-    def from_json(cls, path: str = config.REFERENCE_LIBRARY_PATH,
-                  embedder: Embedder | None = None) -> "ReferenceLibrary":
-        with open(path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        entries = data["references"] if isinstance(data, dict) else data
         for e in entries:
             missing = {"id", "category", "text"} - set(e)
             if missing:
                 raise ValueError(f"reference entry {e!r} missing keys: {missing}")
-            e.setdefault("source", "static")
-        return cls(entries, embedder or Embedder())
+        self.entries = entries
+        self.embedder = embedder
+        self._matrix = np.vstack([embedder.encode(e["text"]) for e in entries])
 
     def __len__(self) -> int:
         return len(self.entries)
-
-    def extended(self, extra_entries: list[dict[str, Any]]) -> "ReferenceLibrary":
-        """Return a NEW library = this one + extra_entries (e.g. clip-specific
-        generated examples). Does not mutate self, and does not re-embed the
-        existing entries -- only the new ones are encoded."""
-        if not extra_entries:
-            return self
-        for e in extra_entries:
-            e.setdefault("source", "generated")
-        extra_matrix = np.vstack([self.embedder.encode(e["text"]) for e in extra_entries])
-        lib = ReferenceLibrary.__new__(ReferenceLibrary)
-        lib.entries = self.entries + extra_entries
-        lib.embedder = self.embedder
-        lib._matrix = np.vstack([self._matrix, extra_matrix])
-        return lib
 
     def top_k_similar(self, query_text: str, k: int = config.TOP_K) -> list[RetrievedExample]:
         """Return the k most cosine-similar reference summaries, best first."""
@@ -154,7 +127,6 @@ class ReferenceLibrary:
                 category=self.entries[i]["category"],
                 text=self.entries[i]["text"],
                 similarity=float(sims[i]),
-                source=self.entries[i].get("source", "static"),
             )
             for i in order
         ]

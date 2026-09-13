@@ -1,6 +1,9 @@
 """Tests for retrieval.py -- embedding math and top-k reference retrieval.
 
 These load the real all-MiniLM-L6-v2 model (first run downloads it, ~90 MB).
+`ReferenceLibrary` no longer reads from a file -- every run builds one from a
+list of reference entries (in production, written on the fly per clip; here,
+a small synthetic set is enough to test the retrieval mechanics).
 """
 
 import os
@@ -11,8 +14,23 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import config  # noqa: E402
 from retrieval import Embedder, ReferenceLibrary, cosine_distance, cosine_similarity  # noqa: E402
+
+SAMPLE_ENTRIES = [
+    {"id": "ref-1", "category": "animals", "text":
+     "A golden retriever sprints across an open grass field, ears flat and tongue "
+     "out, chasing a green tennis ball. It skids as it reaches the ball, grabs it, "
+     "and turns to run back toward a person off-screen."},
+    {"id": "ref-2", "category": "animals", "text":
+     "A grey cat crouches on a windowsill tracking a bird outside, tail twitching. "
+     "It chatters its jaw, then settles into a loaf position facing the glass."},
+    {"id": "ref-3", "category": "people", "text":
+     "A barista steams milk and pours a leaf pattern into a latte, then slides the "
+     "cup across the counter to a waiting customer."},
+    {"id": "ref-4", "category": "objects", "text":
+     "A mechanical watch movement is shown in macro, the balance wheel oscillating "
+     "back and forth as gears of decreasing size mesh across the frame."},
+]
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +40,7 @@ def embedder():
 
 @pytest.fixture(scope="module")
 def library(embedder):
-    return ReferenceLibrary.from_json(config.REFERENCE_LIBRARY_PATH, embedder)
+    return ReferenceLibrary(list(SAMPLE_ENTRIES), embedder)
 
 
 def test_cosine_distance_identity():
@@ -56,8 +74,14 @@ def test_near_paraphrase_is_closer_than_unrelated(embedder):
     assert cosine_distance(base, para) < cosine_distance(base, off)
 
 
-def test_library_loads_all_entries(library):
-    assert len(library) >= 15
+def test_library_requires_entries(embedder):
+    with pytest.raises(ValueError):
+        ReferenceLibrary([], embedder)
+
+
+def test_library_requires_id_category_text(embedder):
+    with pytest.raises(ValueError):
+        ReferenceLibrary([{"id": "x", "text": "missing category"}], embedder)
 
 
 def test_top_k_returns_k_sorted_desc(library):
@@ -72,9 +96,13 @@ def test_top_k_retrieves_on_topic_reference(library):
         "A golden retriever sprints across a grassy field chasing a ball.", k=3
     )
     cats = {h.category for h in hits}
-    assert "animals-nature" in cats
-    # the dedicated dog-on-grass reference should be the top hit
-    assert hits[0].id == "nature-01"
+    assert "animals" in cats
+    assert hits[0].id == "ref-1"  # the dedicated dog-on-grass entry
+
+
+def test_top_k_caps_at_library_size(library):
+    hits = library.top_k_similar("anything", k=50)
+    assert len(hits) == len(SAMPLE_ENTRIES)
 
 
 def test_query_specificity_changes_ranking(library):
@@ -83,22 +111,3 @@ def test_query_specificity_changes_ranking(library):
         "A barista steams milk and pours latte art for a customer.", k=3
     )
     assert specific[0].similarity > vague[0].similarity
-
-
-def test_static_entries_are_tagged(library):
-    assert all(e.get("source") == "static" for e in library.entries)
-
-
-def test_extended_adds_entries_without_mutating_original(library):
-    original_len = len(library)
-    extra = [{"id": "gen-1", "category": "test", "text": "A rocket launches into a clear blue sky."}]
-    bigger = library.extended(extra)
-    assert len(bigger) == original_len + 1
-    assert len(library) == original_len  # original untouched
-    hits = bigger.top_k_similar("A rocket launches into a clear blue sky.", k=1)
-    assert hits[0].id == "gen-1"
-    assert hits[0].source == "generated"
-
-
-def test_extended_with_no_entries_returns_self(library):
-    assert library.extended([]) is library

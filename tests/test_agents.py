@@ -41,8 +41,7 @@ def test_parse_generated_references_clean():
            '{"category": "cooking", "text": "A pot of pasta boils over on a stovetop."}]}')
     refs = parse_generated_references(raw)
     assert len(refs) == 2
-    assert refs[0]["id"] == "gen-1"
-    assert refs[0]["source"] == "generated"
+    assert refs[0]["id"] == "ref-1"
     assert refs[0]["category"] == "cooking"
 
 

@@ -247,7 +247,6 @@ section > h2{
 .doc .dhead{display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap}
 .doc .dcat{font-size:11px; font-weight:600; color:var(--accent); text-transform:capitalize}
 .doc .closest{font-size:9.5px; font-weight:700; letter-spacing:.06em; color:#fff; background:var(--accent); padding:2px 6px; border-radius:4px}
-.doc .closest.gen{background:var(--warn)}
 .doc .dtext{font-size:12.5px; color:var(--ink-soft); line-height:1.5}
 .note{font-size:12.5px; color:var(--ink-soft); margin-top:8px}
 .note b{color:var(--ink)}
@@ -290,9 +289,9 @@ video{max-width:100%}
 <section>
   <h2>How it works</h2>
   <div class="how">
-    <div class="card"><div class="n">STEP 1</div><div class="t">Look up examples</div>
-      <div class="d">Find a few strong summaries of similar clips to use as a style guide &mdash;
-      from a hand-picked library, plus a few written fresh for this clip&rsquo;s subject.</div></div>
+    <div class="card"><div class="n">STEP 1</div><div class="t">Write examples</div>
+      <div class="d">Write a few strong example summaries for this clip&rsquo;s specific subject,
+      to use as a style guide.</div></div>
     <div class="card"><div class="n">STEP 2</div><div class="t">Write</div>
       <div class="d">Draft the summary from the clip &mdash; or rewrite it using the reviewer&rsquo;s notes.</div></div>
     <div class="card"><div class="n">STEP 3</div><div class="t">Compare</div>
@@ -493,7 +492,6 @@ function render(){
       const dd = el("div",{class:"doc"+(di===0?" top":"")});
       const h = el("div",{class:"dhead"});
       h.append(el("span",{class:"dcat"}, String(doc.category||"example").replace(/-/g," ")));
-      if(doc.source==="generated") h.append(el("span",{class:"closest gen"}, "WRITTEN FOR THIS CLIP"));
       if(di===0) h.append(el("span",{class:"closest"}, "CLOSEST MATCH"));
       dd.append(h);
       dd.append(el("div",{class:"dtext"}, doc.text));
@@ -551,8 +549,7 @@ function render(){
 }
 
 $("#foot").textContent =
-  "Examples come from a small hand-picked library, plus a few written by the AI "+
-  "itself for each clip's subject (marked “written for this clip”). "+
+  "The example summaries are written by the AI itself, fresh for each clip's subject. "+
   "Ratings are the reviewer AI's own judgement and can be noisy. "+
   "This is an exploratory test on a few clips, not a formal study.";
 

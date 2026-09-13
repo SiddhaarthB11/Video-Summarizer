@@ -4,10 +4,12 @@
 `run_video(path, halting=False)` runs the fixed-iteration baseline: identical
 loop, but the halt cascade is ignored and it always runs MAX_ROUNDS.
 
-The video is uploaded to Gemini once and the handle is reused for every round.
-Callers that run both policies for one clip should pass a shared `backend` and
-`library` and a pre-uploaded `video` handle to avoid re-embedding the library
-and re-uploading the clip.
+There is no fixed reference library: every run writes its own reference
+summaries, tailored to that clip's subject, from a single LLM call. Retrieval
+for the whole run works over that per-clip set. Callers that run both policies
+for one clip should pass a shared `backend` and a pre-uploaded `video` handle
+to avoid re-uploading the clip, and pass the first call's `generated_references`
+into the second so both compare against the same examples.
 """
 
 from __future__ import annotations
@@ -28,12 +30,16 @@ from halting import halt_decision
 from retrieval import Embedder, ReferenceLibrary, cosine_distance
 
 
+class ReferenceGenerationError(RuntimeError):
+    """Raised when the clip-specific reference examples couldn't be written
+    (and there's no fixed library to fall back to)."""
+
+
 def run_video(
     video_path: str,
     halting: bool = True,
     *,
     backend=None,
-    library: ReferenceLibrary | None = None,
     embedder: Embedder | None = None,
     video=None,
     verbose: bool = False,
@@ -43,9 +49,8 @@ def run_video(
     """
     generated_references: reuse a previously-generated clip-specific reference
     set instead of writing a new one (e.g. so the halted and baseline runs of
-    the same clip compare against identical references). Pass `[]` to force
-    "no dynamic references" for this call regardless of config. Leave as
-    `None` to generate fresh ones when `config.DYNAMIC_REFERENCES` is on.
+    the same clip compare against identical examples). Leave as `None` to
+    generate a fresh set for this call.
     """
     def emit(kind: str, **data: Any) -> None:
         if on_event is not None:
@@ -53,7 +58,6 @@ def run_video(
 
     backend = backend or get_backend()
     embedder = embedder or Embedder()
-    library = library or ReferenceLibrary.from_json(embedder=embedder)
     if video is None:
         emit("upload", status="start", message="Sending the clip to Gemini…")
         video = backend.upload_video(video_path)
@@ -73,21 +77,31 @@ def run_video(
     query_source = "fresh-eyes description of the clip"
     emit("fresh_eyes", status="done", text=fresh_eyes_query)
 
-    if generated_references is None and config.DYNAMIC_REFERENCES:
+    if generated_references is None:
         emit("generate_refs", status="start",
              message="Writing tailored examples for this clip…")
-        try:
-            raw = backend.generate_references(
-                fresh_eyes_query, usage, config.DYNAMIC_REFERENCE_COUNT
-            )
-            generated_references = parse_generated_references(raw)
-        except Exception:  # noqa: BLE001 - a bad generation shouldn't sink the run
-            generated_references = []
-        emit("generate_refs", status="done",
-             examples=[{"category": e["category"], "text": e["text"]}
-                       for e in generated_references])
-    generated_references = generated_references or []
-    run_library = library.extended(generated_references)
+        generated_references = []
+        for attempt in range(2):
+            try:
+                raw = backend.generate_references(
+                    fresh_eyes_query, usage, config.DYNAMIC_REFERENCE_COUNT
+                )
+                generated_references = parse_generated_references(raw)
+            except Exception:  # noqa: BLE001
+                generated_references = []
+            if generated_references:
+                break
+        if generated_references:
+            emit("generate_refs", status="done",
+                 examples=[{"category": e["category"], "text": e["text"]}
+                           for e in generated_references])
+
+    if not generated_references:
+        raise ReferenceGenerationError(
+            "No reference examples to retrieve against for this clip -- "
+            "there's no fixed library to fall back to. Try again."
+        )
+    run_library = ReferenceLibrary(generated_references, embedder)
 
     rounds: list[dict[str, Any]] = []
     distances: list[float] = []   # d_t for t >= 2
@@ -209,7 +223,6 @@ def run_video(
             "TOP_K": config.TOP_K,
             "MODEL": config.MODEL,
             "EMBED_MODEL": config.EMBED_MODEL,
-            "DYNAMIC_REFERENCES": config.DYNAMIC_REFERENCES,
             "DYNAMIC_REFERENCE_COUNT": config.DYNAMIC_REFERENCE_COUNT,
         },
         "rounds": rounds,

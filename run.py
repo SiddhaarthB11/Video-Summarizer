@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     # imported after the MOCK env flag is set
     from agents import get_backend
     from loop import run_video
-    from retrieval import Embedder, ReferenceLibrary
+    from retrieval import Embedder
 
     videos = discover_videos(args.videos_dir)
     if args.mock and not videos:
@@ -66,7 +66,6 @@ def main(argv: list[str] | None = None) -> int:
 
     os.makedirs(args.results_dir, exist_ok=True)
     embedder = Embedder()
-    library = ReferenceLibrary.from_json(embedder=embedder)
     backend = get_backend()
 
     policies = {"both": [True, False], "halted": [True], "baseline": [False]}[args.only]
@@ -92,7 +91,6 @@ def main(argv: list[str] | None = None) -> int:
                     real_path or vpath,
                     halting=halting,
                     backend=backend,
-                    library=library,
                     embedder=embedder,
                     video=video,
                     verbose=args.verbose,
